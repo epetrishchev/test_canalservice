@@ -4,7 +4,6 @@ from bs4 import BeautifulSoup as bs
 import pandas as pd
 import gspread
 import requests
-import time
 
 
 def get_data_from_sheet(sheet_name: str, sheet_num: int = 0) -> pd.DataFrame:
@@ -32,7 +31,7 @@ def get_data_from_sheet(sheet_name: str, sheet_num: int = 0) -> pd.DataFrame:
     return pd.DataFrame.from_dict(sheet)
 
 
-def format_date(date: str) -> str:
+def format_date_for_CB(date: str) -> str:
     """
     format_date форматирует дату формата ддммгггг в дату формата
     дд/мм/гггг
@@ -46,6 +45,11 @@ def format_date(date: str) -> str:
     return date[:2] + '/' + date[2:4] + '/' + date[4:]
 
 
+def format_date_for_Django(date: str) -> str:
+    str_list = date.split('.')[::-1]
+    return '-'.join(str_list)
+
+
 def get_usd_course() -> float:
     """
     get_usd_course получает курс доллара от ЦБ РФ
@@ -56,7 +60,7 @@ def get_usd_course() -> float:
     # текущая дата в формате ддммгггг
     current_date = datetime.now().strftime('%d%m%Y')
     # форматируем дату для корректного запроса
-    request_date = format_date(current_date)
+    request_date = format_date_for_CB(current_date)
     url = 'http://www.cbr.ru/scripts/XML_daily.asp?'
     params = {'date_req': request_date}
     # делаем запрос на сайт ЦБ
@@ -68,15 +72,22 @@ def get_usd_course() -> float:
     return float(usd_course.replace(',', '.'))
 
 
-def main(frequency: int = 60):
-    while True:
-        sheet_data = get_data_from_sheet('test_canalservice', 0)
-        usd_course = get_usd_course()
-        sheet_data['стоимость в руб.'] = sheet_data['стоимость,$'] * usd_course
-        sheet_data = sheet_data[sheet_data.columns[[0, 1, 2, 4, 3]]]
-        print(sheet_data.head())
-        time.sleep(frequency)
+def get_json_data():
+    sheet_data = get_data_from_sheet('test_canalservice', 0)
+    usd_course = get_usd_course()
+    sheet_data['стоимость в руб.'] = sheet_data['стоимость,$'] * usd_course
+    sheet_data = sheet_data[sheet_data.columns[[0, 1, 2, 4, 3]]]
+    sheet_data.rename(columns={
+        '№': 'id',
+        'заказ №': 'number',
+        'стоимость,$': 'price_usd',
+        'стоимость в руб.': 'price_rub',
+        'срок поставки': 'delivery_date'
+    }, inplace=True)
+    sheet_data['delivery_date'] = sheet_data['delivery_date'].apply(
+        format_date_for_Django)
+    return sheet_data.to_dict('records')
 
 
-if __name__ == '__main__':
-    main(10)
+# test = get_json_data()
+# print()
